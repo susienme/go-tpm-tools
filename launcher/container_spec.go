@@ -10,10 +10,18 @@ import (
 	"github.com/containerd/containerd/oci"
 	"github.com/google/go-tpm-tools/cel"
 	"github.com/google/go-tpm-tools/launcher/internal/gpu"
+	"github.com/google/go-tpm-tools/launcher/internal/launchermount"
 	"github.com/google/go-tpm-tools/launcher/internal/logging"
 	"github.com/google/go-tpm-tools/launcher/launcherfile"
 	"github.com/google/go-tpm-tools/launcher/spec"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+)
+
+const (
+	lssdHostPath      = "/mnt/disks/local-ssd"
+	lssdContainerPath = "/mnt/lssd"
+
+	gib = 1 << 30
 )
 
 func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs []string, listFiles func(string, string) ([]string, error), logger logging.Logger) ([]oci.SpecOpts, error) {
@@ -25,6 +33,15 @@ func createOCISpecOpts(image containerd.Image, launchSpec spec.LaunchSpec, envs 
 	if launchSpec.CgroupNamespace {
 		mounts = appendCgroupRw(mounts)
 	}
+	lssd, err := launchermount.SetupLocalSSD(lssdHostPath, lssdContainerPath)
+	if err != nil {
+		return nil, fmt.Errorf("cannot setup local ssd: %w", err)
+	}
+	if lssd != nil {
+		logger.Info("Local SSD", "Size (GiB)", fmt.Sprintf("%.2f", float64(lssd.TotalSize)/gib))
+		mounts = append(mounts, lssd.SpecsMount())
+	}
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		return nil, &RetryableError{fmt.Errorf("cannot get hostname: [%w]", err)}
